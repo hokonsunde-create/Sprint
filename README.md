@@ -1,5 +1,93 @@
 # Sprint
 A game that makes learning fun. Paste the file with what you want to learn and play!
+[README.md](https://github.com/user-attachments/files/31417262/README.md)
+# SPRINT
+
+Turn any notes into a race. Upload a `.txt`, `.md`, or `.pdf` file (or paste text), and SPRINT
+splits it into **legs**. Each leg opens with the passage to read, then drops you into a
+three-lane dodge-run. Obstacles you can dodge; **Splits** you can't — they're checkpoint
+questions pulled from what you just read, and you have to answer one correctly to keep running.
+Get it wrong and SPRINT shows you the right answer and the sentence it came from before you
+move on. Clear every leg, then survive the **Photo Finish**, a mixed review of everything.
+
+It's a single static HTML file. No build step, no server required to run it, no framework.
+
+## What's included
+
+- `index.html` — the whole game: UI, canvas gameplay, an offline question generator, and an
+  optional AI hint system.
+- `functions/api/hint.js` — an optional serverless proxy (Cloudflare Pages Functions) so AI
+  hints can run in a real deployment without exposing an API key in the browser.
+- `LICENSE` — MIT.
+
+## Run it right now
+
+Just open `index.html` in a browser. Typed or pasted text works completely offline. PDF
+uploads need an internet connection the first time, just to load a PDF-reading library from a
+CDN — your document's contents never leave the browser either way.
+
+## Deploy it for real, with HTTPS
+
+SPRINT is a static site, so any static host gives you a free, valid HTTPS certificate
+automatically — that's what makes a browser treat it as secure. Three ways to do it, in order
+of simplicity:
+
+**GitHub Pages**
+1. Create a new public repo and push these files to it (this is also what makes it "open
+   source" in practice — a public repo with the MIT license attached).
+2. Repo Settings → Pages → set the source to your main branch.
+3. GitHub gives you `https://<you>.github.io/<repo>/` with HTTPS already on.
+
+**Cloudflare Pages / Netlify / Vercel**
+Drag the project folder into any of their dashboards, or connect the GitHub repo. All three
+auto-provision HTTPS the same way. Cloudflare Pages is the one used below for AI hints,
+because its **Pages Functions** feature deploys `functions/api/hint.js` as a serverless
+endpoint automatically, on the same domain as your site.
+
+## Turning on AI hints (optional)
+
+The "Get a Hint" button works two ways:
+
+- **Previewing inside Claude.ai** — it calls Anthropic's API directly through the proxy
+  Claude.ai provides for artifacts. No setup, no key. This *only* works inside a Claude.ai
+  preview, not once you deploy the file elsewhere.
+- **A real deployment** — needs its own backend, because a static site can't hold a secret API
+  key without exposing it to anyone who opens dev tools. `functions/api/hint.js` is that
+  backend, ready to go:
+  1. Deploy to Cloudflare Pages with the `functions/` folder intact.
+  2. In the Pages dashboard: Settings → Environment variables → add `ANTHROPIC_API_KEY` as
+     **encrypted**. Get a key from your Anthropic Console.
+  3. In SPRINT, open Settings (gear icon) and set the hint proxy URL to
+     `https://your-site.pages.dev/api/hint`.
+
+If you'd rather use Netlify or Vercel, the same idea applies — adapt `hint.js` to their
+function format and point the same settings field at your function's URL. If you skip this
+entirely, the game is fully playable — hints just won't be available.
+
+**The boundary, by design:** the hint system is instructed to never state or imply the correct
+option, only to nudge conceptually, and to decline if asked directly for the answer. That's
+enforced twice — once in the system prompt, and once again by a plain string check that
+throws away the hint if it happens to contain an option's exact text. It only ever sees the
+passage, the question, and the answer *options* — never which one is correct.
+
+## How the offline question generator works
+
+No AI required for the core game. SPRINT splits your text into legs (by Markdown headers if
+present, otherwise by paragraph groups), then, for each leg, picks sentences with a strong
+"key term" — a proper noun, a number, or (as a fallback) the longest distinctive word — and
+blanks it out as a fill-in-the-blank question, with distractors drawn from other terms in your
+document. It's a simple heuristic, not language understanding, so it works best on fact-dense
+material (names, dates, defined terms) and can occasionally produce an awkward question on very
+short or very abstract text. Connecting AI hints doesn't change question generation — only
+v1's one AI touchpoint, hints, uses it.
+
+## License
+
+MIT — see `LICENSE`. Do whatever you'd like with it.
+
+
+
+[index.html](https://github.com/user-attachments/files/31417300/index.html)
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -178,6 +266,7 @@ A game that makes learning fun. Paste the file with what you want to learn and p
   .btn-row .btn, .btn-row .btn-ghost{ width:auto; flex:1; }
 
   #startError{ color:var(--stop); font-size:13px; margin-top:10px; min-height:16px; }
+  #startError.status{ color:var(--amber); }
 
   #resumeBanner{
     background:var(--steel); border-radius:8px; padding:12px 14px;
@@ -310,7 +399,10 @@ A game that makes learning fun. Paste the file with what you want to learn and p
 
 <div class="topbar">
   <div class="brand"><span class="flag">▸</span> SPRINT</div>
-  <button id="settingsBtn" class="iconbtn" title="Settings" aria-label="Settings">⚙</button>
+  <div style="display:flex; gap:8px;">
+    <button id="exitBtn" class="iconbtn hidden" title="Exit to start" aria-label="Exit to start" style="width:auto;padding:0 12px;font-family:var(--mono);font-size:12px;font-weight:700;">EXIT</button>
+    <button id="settingsBtn" class="iconbtn" title="Settings" aria-label="Settings">⚙</button>
+  </div>
 </div>
 
 <div class="wrap">
@@ -335,7 +427,8 @@ A game that makes learning fun. Paste the file with what you want to learn and p
           <button class="tabbtn" id="tabPaste">Paste text</button>
         </div>
         <div id="uploadPane">
-          <input type="file" id="fileInput" accept=".txt,.md,text/plain,text/markdown">
+          <input type="file" id="fileInput" accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf">
+          <p style="font-size:12px;opacity:0.65;margin:8px 0 0;">Accepts .txt, .md, or .pdf</p>
         </div>
         <div id="pastePane" class="hidden">
           <textarea id="pasteArea" placeholder="Paste a chapter, article, or your own notes here…"></textarea>
@@ -451,8 +544,9 @@ A game that makes learning fun. Paste the file with what you want to learn and p
   <div class="settings-card">
     <h2 style="font-size:22px;">Settings</h2>
     <p class="settings-help">
-      SPRINT works fully offline. Turning on AI hints is optional — see the README for a ready-made,
-      secure serverless proxy you can deploy so hints never expose an API key in the browser.
+      SPRINT works fully offline for typed or pasted text (PDF uploads need a connection just to load a PDF
+      reader library — your document itself never leaves the browser). Turning on AI hints is optional — see
+      the README for a ready-made, secure serverless proxy you can deploy so hints never expose an API key.
     </p>
     <label for="proxyUrlInput">Hint proxy URL (optional)</label>
     <input type="text" id="proxyUrlInput" placeholder="https://your-site.pages.dev/api/hint">
@@ -463,6 +557,25 @@ A game that makes learning fun. Paste the file with what you want to learn and p
     </div>
   </div>
 </div>
+
+<script type="module">
+  import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.1.200/pdf.min.mjs';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.1.200/pdf.worker.min.mjs';
+
+  // Exposed for the classic script below. Runs entirely in the browser —
+  // the PDF's contents never leave the page, only this library's code
+  // is fetched from the CDN.
+  window.extractPdfText = async function(arrayBuffer){
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let text = '';
+    for (let i=1; i<=pdf.numPages; i++){
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      text += content.items.map(it=>it.str).join(' ') + '\n\n';
+    }
+    return text.trim();
+  };
+</script>
 
 <script>
 (function(){
@@ -719,6 +832,7 @@ function renderScreens(){
   });
   splitModal.classList.toggle('hidden', S.screen!=='split');
   $('pausedOverlay').classList.toggle('hidden', !S.paused);
+  $('exitBtn').classList.toggle('hidden', S.screen==='start');
   renderProgressStrip();
   renderHUD();
 }
@@ -756,7 +870,11 @@ function renderHUD(){
 }
 
 /* ============================= FLOW CONTROL ============================= */
-function showStartError(msg){ $('startError').textContent = msg || ''; }
+function showStartError(msg, isStatus){
+  const el = $('startError');
+  el.textContent = msg || '';
+  el.classList.toggle('status', !!isStatus);
+}
 
 function initFromText(text){
   const levels = buildAllLevels(text);
@@ -839,6 +957,17 @@ function nextLeg(){
 function failLeg(){
   S.screen = 'legFailed';
   renderScreens();
+}
+
+function exitToStart(){
+  if (S.levels.length){ saveProgressSnapshot(); }
+  S.paused = false;
+  S.screen = 'start';
+  S.levels = [];
+  S.onFinal = false;
+  splitModal.classList.add('hidden');
+  renderScreens();
+  checkResume();
 }
 
 function retryLeg(){
@@ -1209,10 +1338,38 @@ function bindEvents(){
   $('fileInput').addEventListener('change', (e)=>{
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ()=>{ S._uploadedText = String(reader.result||''); validateStartInput(); };
-    reader.onerror = ()=>{ showStartError('Could not read that file — try pasting the text instead.'); };
-    reader.readAsText(file);
+    S._uploadedText = '';
+    validateStartInput();
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    if (isPdf){
+      if (typeof window.extractPdfText !== 'function'){
+        showStartError("PDF support didn't load — check your connection, or paste the text instead.");
+        return;
+      }
+      showStartError('Reading PDF…', true);
+      const reader = new FileReader();
+      reader.onload = async ()=>{
+        try{
+          const text = await window.extractPdfText(reader.result);
+          if (!text || text.trim().length < 30){
+            showStartError("That PDF didn't have readable text — it may be scanned pages/images. Try pasting the text instead.");
+          } else {
+            S._uploadedText = text;
+            showStartError('');
+          }
+        }catch(err){
+          showStartError("Couldn't read that PDF — it may be password protected. Try pasting the text instead.");
+        }
+        validateStartInput();
+      };
+      reader.onerror = ()=>{ showStartError('Could not read that file — try pasting the text instead.'); validateStartInput(); };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = ()=>{ S._uploadedText = String(reader.result||''); showStartError(''); validateStartInput(); };
+      reader.onerror = ()=>{ showStartError('Could not read that file — try pasting the text instead.'); validateStartInput(); };
+      reader.readAsText(file);
+    }
   });
   $('pasteArea').addEventListener('input', validateStartInput);
   $('sampleBtn').addEventListener('click', ()=>{
@@ -1235,10 +1392,8 @@ function bindEvents(){
   $('laneDownBtn').addEventListener('click', laneDown);
   $('pauseBtn').addEventListener('click', togglePause);
   $('resumeFromPauseBtn').addEventListener('click', togglePause);
-  $('quitBtn').addEventListener('click', ()=>{
-    S.paused = false; S.screen = 'start'; S.levels = [];
-    renderScreens();
-  });
+  $('quitBtn').addEventListener('click', exitToStart);
+  $('exitBtn').addEventListener('click', exitToStart);
 
   canvas.addEventListener('pointerdown', (e)=>{
     if (S.screen!=='playing' || S.paused) return;
