@@ -20,50 +20,6 @@ It's a single static HTML file. No build step, no server required to run it, no 
   hints can run in a real deployment without exposing an API key in the browser.
 - `LICENSE` — MIT.
 
-## Run it right now
-
-Just open `index.html` in a browser. Typed or pasted text works completely offline. PDF
-uploads need an internet connection the first time, just to load a PDF-reading library from a
-CDN — your document's contents never leave the browser either way.
-
-## Deploy it for real, with HTTPS
-
-SPRINT is a static site, so any static host gives you a free, valid HTTPS certificate
-automatically — that's what makes a browser treat it as secure. Three ways to do it, in order
-of simplicity:
-
-**GitHub Pages**
-1. Create a new public repo and push these files to it (this is also what makes it "open
-   source" in practice — a public repo with the MIT license attached).
-2. Repo Settings → Pages → set the source to your main branch.
-3. GitHub gives you `https://<you>.github.io/<repo>/` with HTTPS already on.
-
-**Cloudflare Pages / Netlify / Vercel**
-Drag the project folder into any of their dashboards, or connect the GitHub repo. All three
-auto-provision HTTPS the same way. Cloudflare Pages is the one used below for AI hints,
-because its **Pages Functions** feature deploys `functions/api/hint.js` as a serverless
-endpoint automatically, on the same domain as your site.
-
-## Turning on AI hints (optional)
-
-The "Get a Hint" button works two ways:
-
-- **Previewing inside Claude.ai** — it calls Anthropic's API directly through the proxy
-  Claude.ai provides for artifacts. No setup, no key. This *only* works inside a Claude.ai
-  preview, not once you deploy the file elsewhere.
-- **A real deployment** — needs its own backend, because a static site can't hold a secret API
-  key without exposing it to anyone who opens dev tools. `functions/api/hint.js` is that
-  backend, ready to go:
-  1. Deploy to Cloudflare Pages with the `functions/` folder intact.
-  2. In the Pages dashboard: Settings → Environment variables → add `ANTHROPIC_API_KEY` as
-     **encrypted**. Get a key from your Anthropic Console.
-  3. In SPRINT, open Settings (gear icon) and set the hint proxy URL to
-     `https://your-site.pages.dev/api/hint`.
-
-If you'd rather use Netlify or Vercel, the same idea applies — adapt `hint.js` to their
-function format and point the same settings field at your function's URL. If you skip this
-entirely, the game is fully playable — hints just won't be available.
-
 **The boundary, by design:** the hint system is instructed to never state or imply the correct
 option, only to nudge conceptually, and to decline if asked directly for the answer. That's
 enforced twice — once in the system prompt, and once again by a plain string check that
